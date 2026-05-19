@@ -1,2 +1,378 @@
-<h1>hola mundo</h1>
-este es un ejemplo
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notas Vault</title>
+    <style>
+      :root {
+        --bg: #101418;
+        --panel: #151b22;
+        --panel-soft: #1d2631;
+        --text: #e6edf3;
+        --muted: #9fb0c3;
+        --accent: #58a6ff;
+        --accent-soft: rgba(88, 166, 255, 0.15);
+        --border: #2a3645;
+        --danger: #ff7b72;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 280px 1fr 320px;
+        width: 100%;
+      }
+
+      .sidebar,
+      .right-panel {
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+        padding: 1rem;
+        overflow: auto;
+      }
+
+      .right-panel {
+        border-right: none;
+        border-left: 1px solid var(--border);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0 0 0.75rem;
+      }
+
+      .vault-title {
+        font-size: 1.1rem;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      button {
+        border: 1px solid var(--border);
+        background: var(--panel-soft);
+        color: var(--text);
+        border-radius: 0.55rem;
+        padding: 0.45rem 0.75rem;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      .note-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+
+      .note-item {
+        border: 1px solid transparent;
+        border-radius: 0.55rem;
+        padding: 0.55rem;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .note-item.active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .note-item small {
+        color: var(--muted);
+      }
+
+      .editor {
+        padding: 1rem;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 0.75rem;
+      }
+
+      .editor input,
+      .editor textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 0.55rem;
+        background: #0f141a;
+        color: var(--text);
+        padding: 0.65rem;
+        font: inherit;
+      }
+
+      .editor textarea {
+        resize: none;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        min-height: 0;
+      }
+
+      .preview {
+        border: 1px solid var(--border);
+        border-radius: 0.55rem;
+        background: #0f141a;
+        padding: 0.65rem;
+        overflow: auto;
+      }
+
+      .preview h1,
+      .preview h2,
+      .preview h3 {
+        margin-top: 0.75rem;
+      }
+
+      .graph {
+        background: #0f141a;
+        border: 1px solid var(--border);
+        border-radius: 0.55rem;
+        height: 240px;
+        position: relative;
+      }
+
+      .node {
+        position: absolute;
+        background: var(--panel-soft);
+        border: 1px solid var(--accent);
+        border-radius: 999px;
+        padding: 0.35rem 0.65rem;
+        font-size: 0.85rem;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .danger {
+        border-color: rgba(255, 123, 114, 0.5);
+        color: var(--danger);
+      }
+
+      @media (max-width: 1100px) {
+        .app {
+          grid-template-columns: 260px 1fr;
+        }
+
+        .right-panel {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="sidebar">
+        <h1 class="vault-title">🧠 Mi Vault</h1>
+        <p class="hint">Notas enlazadas estilo Obsidian (versión simple).</p>
+        <div class="toolbar">
+          <button id="newNoteBtn">+ Nueva</button>
+          <button id="deleteNoteBtn" class="danger">Eliminar</button>
+        </div>
+        <ul id="noteList" class="note-list"></ul>
+      </aside>
+
+      <section class="editor">
+        <input id="titleInput" placeholder="Título de la nota" />
+        <div class="split">
+          <textarea id="contentInput" placeholder="Escribe markdown... Usa [[Enlace Nota]] para conectar ideas"></textarea>
+          <article id="preview" class="preview"></article>
+        </div>
+      </section>
+
+      <aside class="right-panel">
+        <h2>🔗 Mapa de notas</h2>
+        <p class="hint">Visualización básica de enlaces internos.</p>
+        <div id="graph" class="graph"></div>
+      </aside>
+    </main>
+
+    <script>
+      const STORAGE_KEY = 'vault-notes-v1';
+      const defaultNotes = [
+        {
+          id: crypto.randomUUID(),
+          title: 'Bienvenida',
+          content: '# Tu segundo cerebro\n\nCrea ideas y enlázalas con [[Proyectos]].',
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: crypto.randomUUID(),
+          title: 'Proyectos',
+          content: 'Lista de proyectos:\n- App de notas\n- Blog personal\n\nRelacionado con [[Bienvenida]].',
+          updatedAt: new Date().toISOString()
+        }
+      ];
+
+      let notes = loadNotes();
+      let activeId = notes[0]?.id || null;
+
+      const noteList = document.getElementById('noteList');
+      const titleInput = document.getElementById('titleInput');
+      const contentInput = document.getElementById('contentInput');
+      const preview = document.getElementById('preview');
+      const graph = document.getElementById('graph');
+      const newNoteBtn = document.getElementById('newNoteBtn');
+      const deleteNoteBtn = document.getElementById('deleteNoteBtn');
+
+      function loadNotes() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultNotes;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return defaultNotes;
+        }
+      }
+
+      function saveNotes() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      }
+
+      function getActiveNote() {
+        return notes.find((note) => note.id === activeId) || null;
+      }
+
+      function renderList() {
+        noteList.innerHTML = '';
+        notes
+          .slice()
+          .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+          .forEach((note) => {
+            const li = document.createElement('li');
+            li.className = `note-item ${note.id === activeId ? 'active' : ''}`;
+            li.innerHTML = `<strong>${escapeHtml(note.title || 'Sin título')}</strong><br><small>${new Date(note.updatedAt).toLocaleString()}</small>`;
+            li.onclick = () => {
+              activeId = note.id;
+              render();
+            };
+            noteList.appendChild(li);
+          });
+      }
+
+      function parseMarkdown(md) {
+        return escapeHtml(md)
+          .replace(/^###\s(.+)$/gm, '<h3>$1</h3>')
+          .replace(/^##\s(.+)$/gm, '<h2>$1</h2>')
+          .replace(/^#\s(.+)$/gm, '<h1>$1</h1>')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/\n-\s(.+)/g, '<li>$1</li>')
+          .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+          .replace(/\[\[(.+?)\]\]/g, '<mark>[[$1]]</mark>')
+          .replace(/\n/g, '<br>');
+      }
+
+      function escapeHtml(text) {
+        return text
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function extractLinks(content) {
+        return [...content.matchAll(/\[\[(.+?)\]\]/g)].map((m) => m[1].trim());
+      }
+
+      function renderGraph() {
+        graph.innerHTML = '';
+        const width = graph.clientWidth - 100;
+        const height = graph.clientHeight - 60;
+        notes.forEach((note, index) => {
+          const x = 20 + (index % 2) * (width / 1.5);
+          const y = 20 + Math.floor(index / 2) * 70;
+          const node = document.createElement('div');
+          node.className = 'node';
+          node.style.left = `${x}px`;
+          node.style.top = `${y}px`;
+          const links = extractLinks(note.content).length;
+          node.textContent = `${note.title || 'Sin título'} (${links})`;
+          graph.appendChild(node);
+        });
+      }
+
+      function renderEditor() {
+        const active = getActiveNote();
+        if (!active) {
+          titleInput.value = '';
+          contentInput.value = '';
+          preview.innerHTML = '<p class="hint">No hay notas. Crea una nueva.</p>';
+          return;
+        }
+        titleInput.value = active.title;
+        contentInput.value = active.content;
+        preview.innerHTML = parseMarkdown(active.content);
+      }
+
+      function render() {
+        renderList();
+        renderEditor();
+        renderGraph();
+        saveNotes();
+      }
+
+      function updateActive() {
+        const active = getActiveNote();
+        if (!active) return;
+        active.title = titleInput.value;
+        active.content = contentInput.value;
+        active.updatedAt = new Date().toISOString();
+        preview.innerHTML = parseMarkdown(active.content);
+        renderList();
+        renderGraph();
+        saveNotes();
+      }
+
+      titleInput.addEventListener('input', updateActive);
+      contentInput.addEventListener('input', updateActive);
+
+      newNoteBtn.addEventListener('click', () => {
+        const note = {
+          id: crypto.randomUUID(),
+          title: 'Nueva nota',
+          content: '',
+          updatedAt: new Date().toISOString()
+        };
+        notes.unshift(note);
+        activeId = note.id;
+        render();
+      });
+
+      deleteNoteBtn.addEventListener('click', () => {
+        if (!activeId) return;
+        notes = notes.filter((note) => note.id !== activeId);
+        activeId = notes[0]?.id || null;
+        render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>
